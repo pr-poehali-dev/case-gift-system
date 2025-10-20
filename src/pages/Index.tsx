@@ -35,6 +35,7 @@ interface Promocode {
   reward: {
     stars?: number;
     items?: Item[];
+    cases?: number[];
   };
   active: boolean;
 }
@@ -90,12 +91,16 @@ const allPossibleItems: Item[] = [
   { id: 8, name: 'Gold Trophy', rarity: 'legendary', price: 3000, icon: '🏆' },
   { id: 9, name: 'Fire Diamond', rarity: 'legendary', price: 4500, icon: '🔥' },
   { id: 10, name: 'PEPE', rarity: 'mythic', price: 1000000, icon: '🐸' },
+  { id: 11, name: 'ORANGE PEPE', rarity: 'legendary', price: 150000, icon: '🟠' },
 ];
 
 const getRandomItem = (caseId: number): Item => {
   const random = Math.random() * 100;
   
   if (caseId === 0) {
+    if (random < 10) {
+      return allPossibleItems[11];
+    }
     const availableItems = allPossibleItems.filter(i => i.rarity !== 'legendary' && i.rarity !== 'mythic');
     return availableItems[Math.floor(Math.random() * availableItems.length)];
   }
@@ -184,6 +189,9 @@ export default function Index() {
   const [adminPromoStars, setAdminPromoStars] = useState(0);
   const [adminGiftStars, setAdminGiftStars] = useState(0);
   const [adminGiftItem, setAdminGiftItem] = useState<Item | null>(null);
+  
+  const [casesToOpen, setCasesToOpen] = useState(1);
+  const [multiOpenResults, setMultiOpenResults] = useState<Item[]>([]);
   
   const playRouletteTickSound = () => {
     const audioContext = new AudioContext();
@@ -409,10 +417,12 @@ export default function Index() {
     return user;
   };
   
-  const updateTaskProgress = (type: 'openCases' | 'sellItems' | 'upgrade', amount: number = 1) => {
-    if (!userData || !userData.dailyTasks) return;
+  const updateTaskProgress = (user: UserData, type: 'openCases' | 'sellItems' | 'upgrade', amount: number = 1): UserData => {
+    if (!user.dailyTasks) return user;
     
-    const updatedUser = { ...userData };
+    const updatedUser = { ...user };
+    updatedUser.dailyTasks = { ...user.dailyTasks };
+    
     if (type === 'openCases') {
       updatedUser.dailyTasks.openCases += amount;
     } else if (type === 'sellItems') {
@@ -423,7 +433,7 @@ export default function Index() {
       updatedUser.upgradesAttempted = (updatedUser.upgradesAttempted || 0) + amount;
     }
     
-    saveUserData(updatedUser);
+    return updatedUser;
   };
   
   const claimTaskReward = (taskId: string) => {
@@ -471,6 +481,59 @@ export default function Index() {
     if (!userData?.lastDailyCase) return true;
     const now = Date.now();
     return now - userData.lastDailyCase >= 24 * 60 * 60 * 1000;
+  };
+  
+  const openMultipleCases = (caseId: number, casePrice: number, count: number) => {
+    if (!userData || isSpinning) return;
+    
+    const totalPrice = casePrice * count;
+    if (userData.stars < totalPrice) {
+      alert('Недостаточно звёзд!');
+      return;
+    }
+    
+    if (caseId === 0 && !canOpenDailyCase()) return;
+    
+    playSound('open');
+    
+    const wonItems: Item[] = [];
+    for (let i = 0; i < count; i++) {
+      wonItems.push(getRandomItem(caseId));
+    }
+    
+    setMultiOpenResults(wonItems);
+    setIsSpinning(true);
+    
+    setTimeout(() => {
+      playSound('win');
+      
+      const updatedUser = { 
+        ...userData, 
+        stars: userData.stars - totalPrice,
+        inventory: [...userData.inventory, ...wonItems.map((item, idx) => ({ ...item, id: Date.now() + idx }))],
+        casesOpened: userData.casesOpened + count,
+        level: Math.floor((userData.casesOpened + count) / 10),
+      };
+      
+      if (caseId === 0) {
+        updatedUser.lastDailyCase = Date.now();
+      }
+      
+      wonItems.forEach(item => {
+        const newLog: CaseOpenLog = {
+          username: updatedUser.username,
+          item,
+          timestamp: Date.now(),
+        };
+        const updatedLogs = [newLog, ...caseOpenLogs].slice(0, 10);
+        setCaseOpenLogs(updatedLogs);
+        localStorage.setItem('caseOpenLogs', JSON.stringify(updatedLogs));
+      });
+      
+      const withTaskProgress = updateTaskProgress(updatedUser, 'openCases', count);
+      saveUserData(withTaskProgress);
+      setIsSpinning(false);
+    }, 1500);
   };
 
   const openCase = (caseId: number, casePrice: number) => {
@@ -547,8 +610,8 @@ export default function Index() {
       setCaseOpenLogs(updatedLogs);
       localStorage.setItem('caseOpenLogs', JSON.stringify(updatedLogs));
       
-      saveUserData(finalUser);
-      updateTaskProgress('openCases', 1);
+      const withTaskProgress = updateTaskProgress(finalUser, 'openCases', 1);
+      saveUserData(withTaskProgress);
       setIsSpinning(false);
       
       if (rouletteRef.current) {
@@ -568,8 +631,8 @@ export default function Index() {
         stars: userData.stars + item.price,
         inventory: userData.inventory.filter(i => i.id !== itemId),
       };
-      saveUserData(updatedUser);
-      updateTaskProgress('sellItems', 1);
+      const withTaskProgress = updateTaskProgress(updatedUser, 'sellItems', 1);
+      saveUserData(withTaskProgress);
     }
   };
 
@@ -617,15 +680,17 @@ export default function Index() {
         setUpgradeResult('success');
         const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
         newInventory.push({ ...selectedItemTo, id: Date.now() });
-        saveUserData({ ...userData, inventory: newInventory });
+        const updatedUser = { ...userData, inventory: newInventory };
+        const withTaskProgress = updateTaskProgress(updatedUser, 'upgrade', 1);
+        saveUserData(withTaskProgress);
       } else {
         playSound('open');
         setUpgradeResult('fail');
         const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
-        saveUserData({ ...userData, inventory: newInventory });
+        const updatedUser = { ...userData, inventory: newInventory };
+        const withTaskProgress = updateTaskProgress(updatedUser, 'upgrade', 1);
+        saveUserData(withTaskProgress);
       }
-      
-      updateTaskProgress('upgrade', 1);
       
       setTimeout(() => {
         setIsUpgrading(false);
@@ -652,17 +717,29 @@ export default function Index() {
     }
     
     const updatedUser = { ...userData };
+    let rewardText = 'Промокод активирован!';
+    
     if (promo.reward.stars) {
       updatedUser.stars += promo.reward.stars;
+      rewardText += ` +${promo.reward.stars} ⭐`;
     }
     if (promo.reward.items) {
       updatedUser.inventory = [...updatedUser.inventory, ...promo.reward.items.map(item => ({ ...item, id: Date.now() + Math.random() }))];
+      rewardText += ` +${promo.reward.items.length} предметов`;
     }
+    if (promo.reward.cases && promo.reward.cases.length > 0) {
+      promo.reward.cases.forEach(caseId => {
+        const item = getRandomItem(caseId);
+        updatedUser.inventory.push({ ...item, id: Date.now() + Math.random() });
+      });
+      rewardText += ` +${promo.reward.cases.length} кейсов`;
+    }
+    
     updatedUser.usedPromocodes = [...(updatedUser.usedPromocodes || []), promo.code];
     
     saveUserData(updatedUser);
     setPromocode('');
-    alert(`Промокод активирован! ${promo.reward.stars ? `+${promo.reward.stars} звезд` : ''}`);
+    alert(rewardText);
   };
   
   const adminCreatePromocode = () => {
@@ -871,39 +948,79 @@ export default function Index() {
                     Получай эксклюзивные NFT и продавай их за звёзды
                   </p>
                   <p className="text-2xl font-bold text-accent gold-glow">
-                    🐸 PEPE - 1% шанс в Legend Case!
+                    🐸 PEPE - 1% в Legend / 🟠 ORANGE PEPE - 10% в Daily!
                   </p>
                 </div>
+                
+                <Card className="p-4 bg-primary/10 border-primary/30">
+                  <div className="flex items-center justify-center gap-4">
+                    <Label className="font-bold">Открыть кейсов за раз:</Label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5, 6].map(num => (
+                        <Button
+                          key={num}
+                          onClick={() => setCasesToOpen(num)}
+                          variant={casesToOpen === num ? 'default' : 'outline'}
+                          size="sm"
+                          className={casesToOpen === num ? 'bg-primary' : ''}
+                        >
+                          {num}x
+                        </Button>
+                      ))}
+                    </div>
+                    {casesToOpen > 1 && (
+                      <Badge variant="outline" className="text-sm">
+                        Экономия: нет
+                      </Badge>
+                    )}
+                  </div>
+                </Card>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {cases.map((caseItem) => {
                 const isDaily = caseItem.isDaily;
-                const canOpen = isDaily ? canOpenDailyCase() : userData.stars >= caseItem.price;
+                const totalPrice = caseItem.price * casesToOpen;
+                const canOpen = isDaily ? (canOpenDailyCase() && casesToOpen === 1) : userData.stars >= totalPrice;
                 
                 return (
                   <Card
                     key={caseItem.id}
                     className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer animate-fade-in ${!canOpen ? 'opacity-50' : ''}`}
-                    onClick={() => canOpen && openCase(caseItem.id, caseItem.price)}
+                    onClick={() => {
+                      if (!canOpen) return;
+                      if (casesToOpen > 1) {
+                        openMultipleCases(caseItem.id, caseItem.price, casesToOpen);
+                      } else {
+                        openCase(caseItem.id, caseItem.price);
+                      }
+                    }}
                   >
                     <div className="text-center space-y-4">
                       <div className="text-6xl">📦</div>
+                      {casesToOpen > 1 && !isDaily && (
+                        <Badge className="absolute top-2 right-2 text-lg">{casesToOpen}x</Badge>
+                      )}
                       <h3 className="text-2xl font-bold text-white">{caseItem.name}</h3>
                       {isDaily && !canOpen ? (
                         <div className="text-white text-sm">
                           <div className="font-bold">⏰ {dailyTimeLeft}</div>
                         </div>
-                      ) : (
+                      ) : isDaily ? (
                         <div className="flex items-center justify-center gap-2 text-white">
                           <span className="text-xl">⭐</span>
                           <span className="text-xl font-bold">{caseItem.price}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-white">
+                          <span className="text-xl">⭐</span>
+                          <span className="text-xl font-bold">{totalPrice.toLocaleString()}</span>
                         </div>
                       )}
                       <Button 
                         className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
                         disabled={!canOpen}
                       >
-                        {isDaily && !canOpen ? 'ЖДИТЕ' : 'ОТКРЫТЬ'}
+                        {isDaily && !canOpen ? 'ЖДИТЕ' : casesToOpen > 1 && !isDaily ? `ОТКРЫТЬ ${casesToOpen}x` : 'ОТКРЫТЬ'}
                       </Button>
                     </div>
                   </Card>
@@ -942,7 +1059,49 @@ export default function Index() {
               </div>
             )}
 
-            {wonItem && !isSpinning && (
+            {multiOpenResults.length > 0 && !isSpinning && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <Card className="p-8 bg-card border-4 border-primary max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h2 className="text-4xl font-bold neon-glow">🎁 РЕЗУЛЬТАТЫ ОТКРЫТИЯ</h2>
+                      <p className="text-xl text-muted-foreground mt-2">Получено предметов: {multiOpenResults.length}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {multiOpenResults.map((item, idx) => (
+                        <Card key={idx} className={`p-4 bg-gradient-to-br ${rarityColors[item.rarity]} border-2 border-white/30`}>
+                          <div className="text-center space-y-2">
+                            <div className="text-5xl">{item.icon}</div>
+                            <h3 className="font-bold text-white text-sm">{item.name}</h3>
+                            <Badge className="text-xs">{item.rarity}</Badge>
+                            <div className="flex items-center justify-center gap-1 text-white text-sm">
+                              <span>⭐</span>
+                              <span className="font-bold">{item.price.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                    
+                    <div className="text-center">
+                      <div className="text-2xl font-bold mb-4">
+                        Общая стоимость: ⭐ {multiOpenResults.reduce((sum, item) => sum + item.price, 0).toLocaleString()}
+                      </div>
+                      <Button 
+                        onClick={() => setMultiOpenResults([])} 
+                        className="bg-primary hover:bg-primary/80"
+                        size="lg"
+                      >
+                        ЗАБРАТЬ ВСЁ
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {wonItem && !isSpinning && multiOpenResults.length === 0 && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
                 <Card className={`p-8 bg-gradient-to-br ${rarityColors[wonItem.rarity]} border-4 border-white animate-fade-in`}>
                   <div className="text-center space-y-4">
