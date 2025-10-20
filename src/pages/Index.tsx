@@ -83,6 +83,61 @@ export default function Index() {
   const [wonItem, setWonItem] = useState<Item | null>(null);
   const [rouletteItems, setRouletteItems] = useState<Item[]>([]);
   const rouletteRef = useRef<HTMLDivElement>(null);
+  
+  const playSound = (type: 'open' | 'spin' | 'win' | 'legendary' | 'mythic') => {
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    if (type === 'open') {
+      oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.1);
+    } else if (type === 'spin') {
+      oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 3);
+    } else if (type === 'win') {
+      oscillator.frequency.setValueAtTime(523, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(659, audioContext.currentTime + 0.1);
+      oscillator.frequency.setValueAtTime(784, audioContext.currentTime + 0.2);
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.3);
+    } else if (type === 'legendary') {
+      for (let i = 0; i < 3; i++) {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.frequency.setValueAtTime(400 + i * 200, audioContext.currentTime + i * 0.1);
+        gain.gain.setValueAtTime(0.2, audioContext.currentTime + i * 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.1 + 0.3);
+        osc.start(audioContext.currentTime + i * 0.1);
+        osc.stop(audioContext.currentTime + i * 0.1 + 0.3);
+      }
+    } else if (type === 'mythic') {
+      for (let i = 0; i < 5; i++) {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.frequency.setValueAtTime(523 + i * 100, audioContext.currentTime + i * 0.08);
+        gain.gain.setValueAtTime(0.3, audioContext.currentTime + i * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.08 + 0.4);
+        osc.start(audioContext.currentTime + i * 0.08);
+        osc.stop(audioContext.currentTime + i * 0.08 + 0.4);
+      }
+    }
+  };
 
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
@@ -140,6 +195,8 @@ export default function Index() {
   const openCase = (caseId: number, casePrice: number) => {
     if (!userData || userData.stars < casePrice || isSpinning) return;
 
+    playSound('open');
+    
     const updatedUser = { ...userData, stars: userData.stars - casePrice };
     setUserData(updatedUser);
     setIsSpinning(true);
@@ -159,6 +216,7 @@ export default function Index() {
     setRouletteItems(items);
 
     setTimeout(() => {
+      playSound('spin');
       if (rouletteRef.current) {
         const itemWidth = 150;
         const targetPosition = -(50 * itemWidth - window.innerWidth / 2 + itemWidth / 2);
@@ -168,6 +226,14 @@ export default function Index() {
     }, 100);
 
     setTimeout(() => {
+      if (winningItem.rarity === 'mythic') {
+        playSound('mythic');
+      } else if (winningItem.rarity === 'legendary') {
+        playSound('legendary');
+      } else {
+        playSound('win');
+      }
+      
       setWonItem(winningItem);
       const newInventory = [...updatedUser.inventory, { ...winningItem, id: Date.now() }];
       const newCasesOpened = updatedUser.casesOpened + 1;
@@ -194,6 +260,7 @@ export default function Index() {
     if (!userData) return;
     const item = userData.inventory.find(i => i.id === itemId);
     if (item) {
+      playSound('win');
       const updatedUser = {
         ...userData,
         stars: userData.stars + item.price,
