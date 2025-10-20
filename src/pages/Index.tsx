@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Item {
   id: number;
@@ -21,9 +22,11 @@ interface UserData {
   inventory: Item[];
   level: number;
   casesOpened: number;
+  lastDailyCase?: number;
 }
 
 const cases = [
+  { id: 0, name: 'Daily Case', price: 1, color: 'from-green-500 to-emerald-500', isDaily: true },
   { id: 1, name: 'Starter Case', price: 100, color: 'from-blue-500 to-cyan-500' },
   { id: 2, name: 'Pro Case', price: 500, color: 'from-purple-500 to-pink-500' },
   { id: 3, name: 'Elite Case', price: 1000, color: 'from-orange-500 to-red-500' },
@@ -45,16 +48,22 @@ const allPossibleItems: Item[] = [
   { id: 4, name: 'Silver Trophy', rarity: 'rare', price: 300, icon: '🥈' },
   { id: 5, name: 'Epic Crown', rarity: 'epic', price: 750, icon: '👑' },
   { id: 6, name: 'Epic Crystal', rarity: 'epic', price: 900, icon: '💠' },
-  { id: 7, name: 'Gold Trophy', rarity: 'legendary', price: 3000, icon: '🏆' },
-  { id: 8, name: 'Fire Diamond', rarity: 'legendary', price: 4500, icon: '🔥' },
-  { id: 9, name: 'PEPE', rarity: 'mythic', price: 1000000, icon: '🐸' },
+  { id: 7, name: 'Chocolate', rarity: 'epic', price: 500, icon: '🍫' },
+  { id: 8, name: 'Gold Trophy', rarity: 'legendary', price: 3000, icon: '🏆' },
+  { id: 9, name: 'Fire Diamond', rarity: 'legendary', price: 4500, icon: '🔥' },
+  { id: 10, name: 'PEPE', rarity: 'mythic', price: 1000000, icon: '🐸' },
 ];
 
 const getRandomItem = (caseId: number): Item => {
   const random = Math.random() * 100;
   
+  if (caseId === 0) {
+    const availableItems = allPossibleItems.filter(i => i.rarity !== 'legendary' && i.rarity !== 'mythic');
+    return availableItems[Math.floor(Math.random() * availableItems.length)];
+  }
+  
   if (caseId === 4 && random < 1) {
-    return allPossibleItems[8];
+    return allPossibleItems[10];
   }
   
   if (random < 40) {
@@ -72,17 +81,30 @@ const getRandomItem = (caseId: number): Item => {
   }
 };
 
+const upgradeChances: Record<string, Record<string, number>> = {
+  'common': { 'rare': 70, 'epic': 30, 'legendary': 10 },
+  'rare': { 'epic': 50, 'legendary': 20 },
+  'epic': { 'legendary': 30 },
+};
+
 export default function Index() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'profile' | 'rating'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'upgrade' | 'profile' | 'rating'>('home');
   const [isSpinning, setIsSpinning] = useState(false);
   const [wonItem, setWonItem] = useState<Item | null>(null);
   const [rouletteItems, setRouletteItems] = useState<Item[]>([]);
+  const [dailyTimeLeft, setDailyTimeLeft] = useState('');
   const rouletteRef = useRef<HTMLDivElement>(null);
+  
+  const [selectedItemFrom, setSelectedItemFrom] = useState<Item | null>(null);
+  const [selectedItemTo, setSelectedItemTo] = useState<Item | null>(null);
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const [upgradeResult, setUpgradeResult] = useState<'success' | 'fail' | null>(null);
+  const [wheelRotation, setWheelRotation] = useState(0);
   
   const playSound = (type: 'open' | 'spin' | 'win' | 'legendary' | 'mythic') => {
     const audioContext = new AudioContext();
@@ -148,6 +170,26 @@ export default function Index() {
     }
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (userData?.lastDailyCase) {
+        const now = Date.now();
+        const timeLeft = 24 * 60 * 60 * 1000 - (now - userData.lastDailyCase);
+        
+        if (timeLeft <= 0) {
+          setDailyTimeLeft('');
+        } else {
+          const hours = Math.floor(timeLeft / (60 * 60 * 1000));
+          const minutes = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+          const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000);
+          setDailyTimeLeft(`${hours}ч ${minutes}м ${seconds}с`);
+        }
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [userData]);
+
   const handleAuth = () => {
     if (!username || !password) return;
 
@@ -192,12 +234,23 @@ export default function Index() {
     }
   };
 
+  const canOpenDailyCase = () => {
+    if (!userData?.lastDailyCase) return true;
+    const now = Date.now();
+    return now - userData.lastDailyCase >= 24 * 60 * 60 * 1000;
+  };
+
   const openCase = (caseId: number, casePrice: number) => {
     if (!userData || userData.stars < casePrice || isSpinning) return;
+    
+    if (caseId === 0 && !canOpenDailyCase()) return;
 
     playSound('open');
     
     const updatedUser = { ...userData, stars: userData.stars - casePrice };
+    if (caseId === 0) {
+      updatedUser.lastDailyCase = Date.now();
+    }
     setUserData(updatedUser);
     setIsSpinning(true);
     setWonItem(null);
@@ -270,6 +323,56 @@ export default function Index() {
     }
   };
 
+  const startUpgrade = () => {
+    if (!selectedItemFrom || !selectedItemTo || !userData || isUpgrading) return;
+    
+    const fromIndex = ['common', 'rare', 'epic', 'legendary'].indexOf(selectedItemFrom.rarity);
+    const toIndex = ['common', 'rare', 'epic', 'legendary'].indexOf(selectedItemTo.rarity);
+    
+    if (toIndex <= fromIndex) {
+      alert('Можно улучшать только на более высокую редкость!');
+      return;
+    }
+    
+    const chance = upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity] || 0;
+    if (chance === 0) {
+      alert('Невозможное улучшение!');
+      return;
+    }
+    
+    setIsUpgrading(true);
+    playSound('spin');
+    
+    const successAngle = chance * 3.6;
+    const randomResult = Math.random() * 100 < chance;
+    const targetRotation = 1800 + (randomResult ? Math.random() * successAngle : successAngle + Math.random() * (360 - successAngle));
+    
+    setWheelRotation(targetRotation);
+    
+    setTimeout(() => {
+      if (randomResult) {
+        playSound('win');
+        setUpgradeResult('success');
+        const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
+        newInventory.push({ ...selectedItemTo, id: Date.now() });
+        saveUserData({ ...userData, inventory: newInventory });
+      } else {
+        playSound('open');
+        setUpgradeResult('fail');
+        const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
+        saveUserData({ ...userData, inventory: newInventory });
+      }
+      
+      setTimeout(() => {
+        setIsUpgrading(false);
+        setUpgradeResult(null);
+        setWheelRotation(0);
+        setSelectedItemFrom(null);
+        setSelectedItemTo(null);
+      }, 2000);
+    }, 3000);
+  };
+
   const logout = () => {
     localStorage.removeItem('currentUser');
     setIsLoggedIn(false);
@@ -331,6 +434,11 @@ export default function Index() {
 
   if (!userData) return null;
 
+  const getUpgradeChance = () => {
+    if (!selectedItemFrom || !selectedItemTo) return 0;
+    return upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity] || 0;
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-primary/30 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
@@ -355,6 +463,7 @@ export default function Index() {
               { key: 'home', label: 'Главная', icon: 'Home' },
               { key: 'cases', label: 'Кейсы', icon: 'Package' },
               { key: 'inventory', label: 'Инвентарь', icon: 'Backpack' },
+              { key: 'upgrade', label: 'Улучшения', icon: 'ArrowUpCircle' },
               { key: 'profile', label: 'Профиль', icon: 'User' },
               { key: 'rating', label: 'Рейтинг', icon: 'Trophy' },
             ].map((tab) => (
@@ -390,29 +499,40 @@ export default function Index() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {cases.map((caseItem) => (
-                <Card
-                  key={caseItem.id}
-                  className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer animate-fade-in`}
-                  onClick={() => openCase(caseItem.id, caseItem.price)}
-                >
-                  <div className="text-center space-y-4">
-                    <div className="text-6xl">📦</div>
-                    <h3 className="text-2xl font-bold text-white">{caseItem.name}</h3>
-                    <div className="flex items-center justify-center gap-2 text-white">
-                      <span className="text-xl">⭐</span>
-                      <span className="text-xl font-bold">{caseItem.price}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+              {cases.map((caseItem) => {
+                const isDaily = caseItem.isDaily;
+                const canOpen = isDaily ? canOpenDailyCase() : userData.stars >= caseItem.price;
+                
+                return (
+                  <Card
+                    key={caseItem.id}
+                    className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer animate-fade-in ${!canOpen ? 'opacity-50' : ''}`}
+                    onClick={() => canOpen && openCase(caseItem.id, caseItem.price)}
+                  >
+                    <div className="text-center space-y-4">
+                      <div className="text-6xl">📦</div>
+                      <h3 className="text-2xl font-bold text-white">{caseItem.name}</h3>
+                      {isDaily && !canOpen ? (
+                        <div className="text-white text-sm">
+                          <div className="font-bold">⏰ {dailyTimeLeft}</div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-white">
+                          <span className="text-xl">⭐</span>
+                          <span className="text-xl font-bold">{caseItem.price}</span>
+                        </div>
+                      )}
+                      <Button 
+                        className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
+                        disabled={!canOpen}
+                      >
+                        {isDaily && !canOpen ? 'ЖДИТЕ' : 'ОТКРЫТЬ'}
+                      </Button>
                     </div>
-                    <Button 
-                      className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
-                      disabled={userData.stars < caseItem.price}
-                    >
-                      ОТКРЫТЬ
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
 
             {isSpinning && (
@@ -467,29 +587,40 @@ export default function Index() {
         {activeTab === 'cases' && (
           <div className="space-y-6">
             <h2 className="text-4xl font-bold neon-glow">ВСЕ КЕЙСЫ</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {cases.map((caseItem) => (
-                <Card
-                  key={caseItem.id}
-                  className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer`}
-                  onClick={() => openCase(caseItem.id, caseItem.price)}
-                >
-                  <div className="text-center space-y-4">
-                    <div className="text-6xl">📦</div>
-                    <h3 className="text-2xl font-bold text-white">{caseItem.name}</h3>
-                    <div className="flex items-center justify-center gap-2 text-white">
-                      <span className="text-xl">⭐</span>
-                      <span className="text-xl font-bold">{caseItem.price}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+              {cases.map((caseItem) => {
+                const isDaily = caseItem.isDaily;
+                const canOpen = isDaily ? canOpenDailyCase() : userData.stars >= caseItem.price;
+                
+                return (
+                  <Card
+                    key={caseItem.id}
+                    className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer ${!canOpen ? 'opacity-50' : ''}`}
+                    onClick={() => canOpen && openCase(caseItem.id, caseItem.price)}
+                  >
+                    <div className="text-center space-y-4">
+                      <div className="text-6xl">📦</div>
+                      <h3 className="text-2xl font-bold text-white">{caseItem.name}</h3>
+                      {isDaily && !canOpen ? (
+                        <div className="text-white text-sm">
+                          <div className="font-bold">⏰ {dailyTimeLeft}</div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-white">
+                          <span className="text-xl">⭐</span>
+                          <span className="text-xl font-bold">{caseItem.price}</span>
+                        </div>
+                      )}
+                      <Button 
+                        className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
+                        disabled={!canOpen}
+                      >
+                        {isDaily && !canOpen ? 'ЖДИТЕ' : 'ОТКРЫТЬ'}
+                      </Button>
                     </div>
-                    <Button 
-                      className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
-                      disabled={userData.stars < caseItem.price}
-                    >
-                      ОТКРЫТЬ
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}
@@ -526,6 +657,131 @@ export default function Index() {
                     </div>
                   </Card>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'upgrade' && (
+          <div className="space-y-6 max-w-4xl mx-auto">
+            <h2 className="text-4xl font-bold neon-glow text-center">УЛУЧШЕНИЯ</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Card className="p-6 bg-card border-2 border-primary/30">
+                <h3 className="text-xl font-bold mb-4">Что улучшаем?</h3>
+                <Select onValueChange={(value) => {
+                  const item = userData.inventory.find(i => i.id === Number(value));
+                  setSelectedItemFrom(item || null);
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите предмет" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userData.inventory.filter(i => i.rarity !== 'mythic' && i.rarity !== 'legendary').map((item) => (
+                      <SelectItem key={item.id} value={String(item.id)}>
+                        {item.icon} {item.name} ({item.rarity})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {selectedItemFrom && (
+                  <div className="mt-4">
+                    <Card className={`p-4 bg-gradient-to-br ${rarityColors[selectedItemFrom.rarity]}`}>
+                      <div className="text-center">
+                        <div className="text-6xl">{selectedItemFrom.icon}</div>
+                        <div className="text-white font-bold mt-2">{selectedItemFrom.name}</div>
+                      </div>
+                    </Card>
+                  </div>
+                )}
+              </Card>
+
+              <Card className="p-6 bg-card border-2 border-secondary/30">
+                <h3 className="text-xl font-bold mb-4">Что хотим получить?</h3>
+                <Select onValueChange={(value) => {
+                  const item = allPossibleItems.find(i => `${i.name}-${i.rarity}` === value);
+                  setSelectedItemTo(item ? { ...item, id: Date.now() } : null);
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите предмет" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allPossibleItems.filter(i => i.rarity !== 'mythic' && i.rarity !== 'common').map((item) => (
+                      <SelectItem key={`${item.name}-${item.rarity}`} value={`${item.name}-${item.rarity}`}>
+                        {item.icon} {item.name} ({item.rarity})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {selectedItemTo && (
+                  <div className="mt-4">
+                    <Card className={`p-4 bg-gradient-to-br ${rarityColors[selectedItemTo.rarity]}`}>
+                      <div className="text-center">
+                        <div className="text-6xl">{selectedItemTo.icon}</div>
+                        <div className="text-white font-bold mt-2">{selectedItemTo.name}</div>
+                      </div>
+                    </Card>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            {selectedItemFrom && selectedItemTo && (
+              <Card className="p-8 bg-card border-2 border-accent/30">
+                <div className="text-center space-y-6">
+                  <div className="relative w-64 h-64 mx-auto">
+                    <div 
+                      className="absolute inset-0 rounded-full border-8 border-primary/30"
+                      style={{
+                        background: `conic-gradient(from 0deg, hsl(var(--primary)) 0deg ${getUpgradeChance() * 3.6}deg, hsl(var(--destructive)) ${getUpgradeChance() * 3.6}deg 360deg)`
+                      }}
+                    />
+                    <div 
+                      className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 w-1 h-16 bg-white shadow-[0_0_20px_white] origin-bottom transition-transform duration-3000"
+                      style={{ 
+                        transform: `translateX(-50%) translateY(-2rem) rotate(${wheelRotation}deg)`,
+                        transition: isUpgrading ? 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none'
+                      }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-4xl font-bold neon-glow">
+                        {getUpgradeChance()}%
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-xl">Шанс успеха: <span className="font-bold text-primary">{getUpgradeChance()}%</span></p>
+                    <p className="text-sm text-muted-foreground">При неудаче предмет будет утерян!</p>
+                  </div>
+                  
+                  <Button 
+                    onClick={startUpgrade} 
+                    disabled={isUpgrading || getUpgradeChance() === 0}
+                    className="w-full max-w-xs"
+                    size="lg"
+                  >
+                    {isUpgrading ? 'УЛУЧШАЕМ...' : 'УЛУЧШИТЬ'}
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {upgradeResult && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+                <Card className={`p-8 ${upgradeResult === 'success' ? 'bg-gradient-to-br from-green-500 to-emerald-500' : 'bg-gradient-to-br from-red-500 to-orange-500'} border-4 border-white animate-fade-in`}>
+                  <div className="text-center space-y-4">
+                    <div className="text-8xl">{upgradeResult === 'success' ? '✅' : '❌'}</div>
+                    <h3 className="text-4xl font-bold text-white">
+                      {upgradeResult === 'success' ? 'УСПЕХ!' : 'НЕУДАЧА!'}
+                    </h3>
+                    <p className="text-xl text-white">
+                      {upgradeResult === 'success' ? 'Предмет улучшен!' : 'Предмет потерян!'}
+                    </p>
+                  </div>
+                </Card>
               </div>
             )}
           </div>
