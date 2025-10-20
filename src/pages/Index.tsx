@@ -78,6 +78,20 @@ const getRandomItem = (caseId: number): Item => {
     return availableItems[Math.floor(Math.random() * availableItems.length)];
   }
   
+  if (caseId === 1) {
+    const availableItems = allPossibleItems.filter(i => i.rarity !== 'legendary' && i.rarity !== 'mythic');
+    if (random < 50) {
+      const commonItems = availableItems.filter(i => i.rarity === 'common');
+      return commonItems[Math.floor(Math.random() * commonItems.length)];
+    } else if (random < 85) {
+      const rareItems = availableItems.filter(i => i.rarity === 'rare');
+      return rareItems[Math.floor(Math.random() * rareItems.length)];
+    } else {
+      const epicItems = availableItems.filter(i => i.rarity === 'epic');
+      return epicItems[Math.floor(Math.random() * epicItems.length)];
+    }
+  }
+  
   if (caseId === 4 && random < 1) {
     return allPossibleItems[10];
   }
@@ -241,6 +255,23 @@ export default function Index() {
     const savedLogs = localStorage.getItem('caseOpenLogs');
     if (savedLogs) {
       setCaseOpenLogs(JSON.parse(savedLogs));
+    }
+    
+    const users = JSON.parse(localStorage.getItem('users') || '{}');
+    if (Object.keys(users).length === 0) {
+      const demoUsers = {
+        'ProGamer': { password: 'demo', data: { username: 'ProGamer', stars: 15000, inventory: [], level: 8, casesOpened: 85 } },
+        'LuckyOne': { password: 'demo', data: { username: 'LuckyOne', stars: 12500, inventory: [], level: 6, casesOpened: 62 } },
+        'CaseHunter': { password: 'demo', data: { username: 'CaseHunter', stars: 10200, inventory: [], level: 5, casesOpened: 53 } },
+        'StarCollector': { password: 'demo', data: { username: 'StarCollector', stars: 8900, inventory: [], level: 4, casesOpened: 45 } },
+        'EpicWinner': { password: 'demo', data: { username: 'EpicWinner', stars: 7500, inventory: [], level: 4, casesOpened: 41 } },
+        'RareSeeker': { password: 'demo', data: { username: 'RareSeeker', stars: 6300, inventory: [], level: 3, casesOpened: 38 } },
+        'NightGamer': { password: 'demo', data: { username: 'NightGamer', stars: 5100, inventory: [], level: 3, casesOpened: 31 } },
+        'DailyPlayer': { password: 'demo', data: { username: 'DailyPlayer', stars: 4200, inventory: [], level: 2, casesOpened: 27 } },
+        'NewbMaster': { password: 'demo', data: { username: 'NewbMaster', stars: 3400, inventory: [], level: 2, casesOpened: 22 } },
+        'Beginner123': { password: 'demo', data: { username: 'Beginner123', stars: 2800, inventory: [], level: 1, casesOpened: 18 } },
+      };
+      localStorage.setItem('users', JSON.stringify(demoUsers));
     }
   }, []);
   
@@ -826,7 +857,12 @@ export default function Index() {
                   <Card
                     key={caseItem.id}
                     className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer ${!canOpen ? 'opacity-50' : ''}`}
-                    onClick={() => canOpen && openCase(caseItem.id, caseItem.price)}
+                    onClick={() => {
+                      if (canOpen) {
+                        setActiveTab('home');
+                        setTimeout(() => openCase(caseItem.id, caseItem.price), 100);
+                      }
+                    }}
                   >
                     <div className="text-center space-y-4">
                       <div className="text-6xl">📦</div>
@@ -1116,31 +1152,69 @@ export default function Index() {
                   
                   const topUsers = allUsers.slice(0, 10);
                   
-                  return topUsers.map((user, index) => (
-                    <div
-                      key={user.username}
-                      className={`flex items-center justify-between p-4 rounded-lg ${
-                        user.username === userData.username
-                          ? 'bg-primary/20 border-2 border-primary'
-                          : 'bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="text-2xl font-bold w-8">{index + 1}</span>
-                        <span className="text-3xl">
-                          {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐'}
-                        </span>
-                        <div>
-                          <div className="text-xl font-semibold">{user.username}</div>
-                          <div className="text-sm text-muted-foreground">Уровень {user.level}</div>
+                  return topUsers.map((user, index) => {
+                    const avatarEmojis = ['🦸', '🧙', '🤖', '👾', '🐉', '🦊', '🐺', '🦁', '🐯', '🐼'];
+                    const medalColors = [
+                      'from-yellow-400 to-yellow-600',
+                      'from-gray-300 to-gray-500',
+                      'from-amber-600 to-amber-800',
+                    ];
+                    
+                    return (
+                      <div
+                        key={user.username}
+                        className={`relative overflow-hidden rounded-xl ${
+                          user.username === userData.username
+                            ? 'bg-primary/20 border-2 border-primary shadow-lg shadow-primary/50'
+                            : 'bg-gradient-to-r from-card to-card/50 border border-primary/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4 p-4">
+                          <div className="flex flex-col items-center gap-1">
+                            <div className={`text-3xl font-bold ${index < 3 ? `bg-gradient-to-br ${medalColors[index]} bg-clip-text text-transparent` : ''}`}>
+                              #{index + 1}
+                            </div>
+                            <span className="text-4xl">
+                              {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🎖️'}
+                            </span>
+                          </div>
+                          
+                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-3xl border-2 border-primary/50 shadow-lg">
+                            {avatarEmojis[index % avatarEmojis.length]}
+                          </div>
+                          
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="text-xl font-bold">{user.username}</div>
+                              {user.username === userData.username && (
+                                <Badge variant="outline" className="text-xs">ВЫ</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                              <span className="flex items-center gap-1">
+                                <Icon name="Star" size={14} />
+                                Уровень {user.level}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Icon name="Package" size={14} />
+                                {user.casesOpened} кейсов
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2 bg-primary/20 px-3 py-1 rounded-full">
+                              <span className="text-xl">⭐</span>
+                              <span className="text-xl font-bold">{user.stars.toLocaleString()}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {Math.round(user.stars / (user.casesOpened || 1))} за кейс
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">⭐</span>
-                        <span className="text-xl font-bold">{user.stars.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ));
+                    );
+                  });
                 })()}
               </div>
             </Card>
