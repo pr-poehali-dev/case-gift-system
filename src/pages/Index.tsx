@@ -255,11 +255,12 @@ export default function Index() {
     setIsSpinning(true);
     setWonItem(null);
 
+    const winningItem = getRandomItem(caseId);
     const items: Item[] = [];
+    
     for (let i = 0; i < 50; i++) {
       items.push(getRandomItem(caseId));
     }
-    const winningItem = getRandomItem(caseId);
     items.push(winningItem);
     
     for (let i = 0; i < 20; i++) {
@@ -267,12 +268,15 @@ export default function Index() {
     }
     
     setRouletteItems(items);
+    setWonItem(winningItem);
 
     setTimeout(() => {
       playSound('spin');
       if (rouletteRef.current) {
         const itemWidth = 150;
-        const targetPosition = -(50 * itemWidth - window.innerWidth / 2 + itemWidth / 2);
+        const gap = 16;
+        const winningIndex = 50;
+        const targetPosition = -(winningIndex * (itemWidth + gap) - window.innerWidth / 2 + itemWidth / 2);
         rouletteRef.current.style.transition = 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
         rouletteRef.current.style.transform = `translateX(${targetPosition}px)`;
       }
@@ -286,8 +290,6 @@ export default function Index() {
       } else {
         playSound('win');
       }
-      
-      setWonItem(winningItem);
       const newInventory = [...updatedUser.inventory, { ...winningItem, id: Date.now() }];
       const newCasesOpened = updatedUser.casesOpened + 1;
       const newLevel = Math.floor(newCasesOpened / 10);
