@@ -115,6 +115,37 @@ export default function Index() {
   const [upgradeResult, setUpgradeResult] = useState<'success' | 'fail' | null>(null);
   const [wheelRotation, setWheelRotation] = useState(0);
   
+  const playRouletteTickSound = () => {
+    const audioContext = new AudioContext();
+    let tickCount = 0;
+    const maxTicks = 30;
+    const baseInterval = 50;
+    
+    const playTick = () => {
+      if (tickCount >= maxTicks) return;
+      
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      
+      osc.frequency.setValueAtTime(800, audioContext.currentTime);
+      gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+      
+      osc.start();
+      osc.stop(audioContext.currentTime + 0.05);
+      
+      tickCount++;
+      const nextInterval = baseInterval + tickCount * 3;
+      if (tickCount < maxTicks) {
+        setTimeout(playTick, nextInterval);
+      }
+    };
+    
+    playTick();
+  };
+
   const playSound = (type: 'open' | 'spin' | 'win' | 'legendary' | 'mythic') => {
     const audioContext = new AudioContext();
     const oscillator = audioContext.createOscillator();
@@ -131,10 +162,8 @@ export default function Index() {
       oscillator.start();
       oscillator.stop(audioContext.currentTime + 0.1);
     } else if (type === 'spin') {
-      oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 3);
+      playRouletteTickSound();
+      return;
     } else if (type === 'win') {
       oscillator.frequency.setValueAtTime(523, audioContext.currentTime);
       oscillator.frequency.setValueAtTime(659, audioContext.currentTime + 0.1);
@@ -282,10 +311,14 @@ export default function Index() {
     setTimeout(() => {
       playSound('spin');
       if (rouletteRef.current) {
+        const containerWidth = window.innerWidth;
         const itemWidth = 150;
         const gap = 16;
+        const itemWithGap = itemWidth + gap;
         const winningIndex = 50;
-        const targetPosition = -(winningIndex * (itemWidth + gap) - window.innerWidth / 2 + itemWidth / 2);
+        const centerOffset = containerWidth / 2;
+        const targetPosition = -(winningIndex * itemWithGap + itemWidth / 2 - centerOffset);
+        
         rouletteRef.current.style.transition = 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
         rouletteRef.current.style.transform = `translateX(${targetPosition}px)`;
       }
@@ -358,7 +391,7 @@ export default function Index() {
     const chance = upgradeConfig.chance;
     
     setIsUpgrading(true);
-    playSound('spin');
+    playRouletteTickSound();
     
     const successAngle = chance * 3.6;
     const randomResult = Math.random() * 100 < chance;
@@ -568,13 +601,14 @@ export default function Index() {
                   
                   <div
                     ref={rouletteRef}
-                    className="flex items-center h-full gap-4 px-4"
-                    style={{ transform: 'translateX(0)' }}
+                    className="flex items-center h-full px-4"
+                    style={{ transform: 'translateX(0)', gap: '16px' }}
                   >
                     {rouletteItems.map((item, index) => (
                       <div
                         key={index}
-                        className={`flex-shrink-0 w-32 h-32 bg-gradient-to-br ${rarityColors[item.rarity]} rounded-lg border-2 border-white/30 flex flex-col items-center justify-center`}
+                        className={`flex-shrink-0 bg-gradient-to-br ${rarityColors[item.rarity]} rounded-lg border-2 border-white/30 flex flex-col items-center justify-center`}
+                        style={{ width: '150px', height: '128px' }}
                       >
                         <div className="text-5xl">{item.icon}</div>
                         <div className="text-xs text-white font-bold mt-1">{item.name}</div>
