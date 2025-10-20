@@ -23,6 +23,22 @@ interface UserData {
   level: number;
   casesOpened: number;
   lastDailyCase?: number;
+  usedPromocodes?: string[];
+}
+
+interface Promocode {
+  code: string;
+  reward: {
+    stars?: number;
+    items?: Item[];
+  };
+  active: boolean;
+}
+
+interface CaseOpenLog {
+  username: string;
+  item: Item;
+  timestamp: number;
 }
 
 const cases = [
@@ -102,7 +118,7 @@ export default function Index() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'upgrade' | 'profile' | 'rating'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'upgrade' | 'profile' | 'rating' | 'admin'>('home');
   const [isSpinning, setIsSpinning] = useState(false);
   const [wonItem, setWonItem] = useState<Item | null>(null);
   const [rouletteItems, setRouletteItems] = useState<Item[]>([]);
@@ -114,6 +130,16 @@ export default function Index() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeResult, setUpgradeResult] = useState<'success' | 'fail' | null>(null);
   const [wheelRotation, setWheelRotation] = useState(0);
+  
+  const [promocode, setPromocode] = useState('');
+  const [promocodes, setPromocodes] = useState<Promocode[]>([]);
+  const [caseOpenLogs, setCaseOpenLogs] = useState<CaseOpenLog[]>([]);
+  const [ratingTimer, setRatingTimer] = useState(15);
+  
+  const [adminNewPromocode, setAdminNewPromocode] = useState('');
+  const [adminPromoStars, setAdminPromoStars] = useState(0);
+  const [adminGiftStars, setAdminGiftStars] = useState(0);
+  const [adminGiftItem, setAdminGiftItem] = useState<Item | null>(null);
   
   const playRouletteTickSound = () => {
     const audioContext = new AudioContext();
@@ -206,7 +232,32 @@ export default function Index() {
       setUserData(user);
       setIsLoggedIn(true);
     }
+    
+    const savedPromocodes = localStorage.getItem('promocodes');
+    if (savedPromocodes) {
+      setPromocodes(JSON.parse(savedPromocodes));
+    }
+    
+    const savedLogs = localStorage.getItem('caseOpenLogs');
+    if (savedLogs) {
+      setCaseOpenLogs(JSON.parse(savedLogs));
+    }
   }, []);
+  
+  useEffect(() => {
+    if (activeTab === 'rating') {
+      const interval = setInterval(() => {
+        setRatingTimer((prev) => {
+          if (prev <= 1) {
+            return 15;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -343,6 +394,15 @@ export default function Index() {
         level: newLevel,
       };
       
+      const newLog: CaseOpenLog = {
+        username: finalUser.username,
+        item: winningItem,
+        timestamp: Date.now(),
+      };
+      const updatedLogs = [newLog, ...caseOpenLogs].slice(0, 10);
+      setCaseOpenLogs(updatedLogs);
+      localStorage.setItem('caseOpenLogs', JSON.stringify(updatedLogs));
+      
       saveUserData(finalUser);
       setIsSpinning(false);
       
@@ -427,6 +487,75 @@ export default function Index() {
         setSelectedItemTo(null);
       }, 2000);
     }, 3000);
+  };
+
+  const activatePromocode = () => {
+    if (!userData || !promocode.trim()) return;
+    
+    const promo = promocodes.find(p => p.code === promocode.toUpperCase() && p.active);
+    if (!promo) {
+      alert('Промокод недействителен!');
+      return;
+    }
+    
+    if (userData.usedPromocodes?.includes(promo.code)) {
+      alert('Вы уже использовали этот промокод!');
+      return;
+    }
+    
+    const updatedUser = { ...userData };
+    if (promo.reward.stars) {
+      updatedUser.stars += promo.reward.stars;
+    }
+    if (promo.reward.items) {
+      updatedUser.inventory = [...updatedUser.inventory, ...promo.reward.items.map(item => ({ ...item, id: Date.now() + Math.random() }))];
+    }
+    updatedUser.usedPromocodes = [...(updatedUser.usedPromocodes || []), promo.code];
+    
+    saveUserData(updatedUser);
+    setPromocode('');
+    alert(`Промокод активирован! ${promo.reward.stars ? `+${promo.reward.stars} звезд` : ''}`);
+  };
+  
+  const adminCreatePromocode = () => {
+    if (!adminNewPromocode.trim() || userData?.username !== 'Arbuz0') return;
+    
+    const newPromo: Promocode = {
+      code: adminNewPromocode.toUpperCase(),
+      reward: { stars: adminPromoStars },
+      active: true,
+    };
+    
+    const updated = [...promocodes, newPromo];
+    setPromocodes(updated);
+    localStorage.setItem('promocodes', JSON.stringify(updated));
+    setAdminNewPromocode('');
+    setAdminPromoStars(0);
+    alert('Промокод создан!');
+  };
+  
+  const adminDeletePromocode = (code: string) => {
+    if (userData?.username !== 'Arbuz0') return;
+    const updated = promocodes.filter(p => p.code !== code);
+    setPromocodes(updated);
+    localStorage.setItem('promocodes', JSON.stringify(updated));
+  };
+  
+  const adminGiveGift = () => {
+    if (userData?.username !== 'Arbuz0') return;
+    
+    const updatedUser = { ...userData };
+    if (adminGiftStars > 0) {
+      updatedUser.stars += adminGiftStars;
+    }
+    if (adminGiftItem) {
+      updatedUser.inventory = [...updatedUser.inventory, { ...adminGiftItem, id: Date.now() }];
+    }
+    
+    saveUserData(updatedUser);
+    setAdminGiftStars(0);
+    setAdminGiftItem(null);
+    alert('Подарок выдан!');
   };
 
   const logout = () => {
@@ -523,6 +652,7 @@ export default function Index() {
               { key: 'upgrade', label: 'Улучшения', icon: 'ArrowUpCircle' },
               { key: 'profile', label: 'Профиль', icon: 'User' },
               { key: 'rating', label: 'Рейтинг', icon: 'Trophy' },
+              ...(userData.username === 'Arbuz0' ? [{ key: 'admin', label: 'Админ', icon: 'Shield' }] : []),
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -544,20 +674,60 @@ export default function Index() {
       <main className="container mx-auto px-4 py-8">
         {activeTab === 'home' && (
           <div className="space-y-8">
-            <div className="text-center space-y-4">
-              <h2 className="text-6xl font-bold neon-glow animate-pulse-glow">
-                ОТКРЫВАЙ КЕЙСЫ
-              </h2>
-              <p className="text-xl text-muted-foreground">
-                Получай эксклюзивные NFT и продавай их за звёзды
-              </p>
-              <p className="text-2xl font-bold text-accent gold-glow">
-                🐸 PEPE - 1% шанс в Legend Case!
-              </p>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="lg:col-span-1 space-y-4">
+                <Card className="p-4 bg-card/80 border-primary/30">
+                  <h3 className="text-lg font-bold mb-3 neon-glow">🎁 ПОСЛЕДНИЕ ДРОПЫ</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {caseOpenLogs.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Пока никто не открывал кейсы</p>
+                    ) : (
+                      caseOpenLogs.map((log, idx) => (
+                        <div key={idx} className={`p-2 rounded-lg bg-gradient-to-r ${rarityColors[log.item.rarity]} border border-white/20 animate-fade-in`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{log.item.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-white truncate">{log.username}</p>
+                              <p className="text-xs text-white/80 truncate">{log.item.name}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </Card>
+                
+                <Card className="p-4 bg-card/80 border-primary/30">
+                  <h3 className="text-lg font-bold mb-3">🎟️ ПРОМОКОД</h3>
+                  <div className="space-y-2">
+                    <Input
+                      value={promocode}
+                      onChange={(e) => setPromocode(e.target.value.toUpperCase())}
+                      placeholder="ВВЕДИ КОД"
+                      className="text-center font-bold"
+                    />
+                    <Button onClick={activatePromocode} className="w-full">
+                      АКТИВИРОВАТЬ
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+              
+              <div className="lg:col-span-3 space-y-4">
+                <div className="text-center space-y-4">
+                  <h2 className="text-6xl font-bold neon-glow animate-pulse-glow">
+                    ОТКРЫВАЙ КЕЙСЫ
+                  </h2>
+                  <p className="text-xl text-muted-foreground">
+                    Получай эксклюзивные NFT и продавай их за звёзды
+                  </p>
+                  <p className="text-2xl font-bold text-accent gold-glow">
+                    🐸 PEPE - 1% шанс в Legend Case!
+                  </p>
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-              {cases.map((caseItem) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {cases.map((caseItem) => {
                 const isDaily = caseItem.isDaily;
                 const canOpen = isDaily ? canOpenDailyCase() : userData.stars >= caseItem.price;
                 
@@ -589,7 +759,9 @@ export default function Index() {
                     </div>
                   </Card>
                 );
-              })}
+                  })}
+                </div>
+              </div>
             </div>
 
             {isSpinning && (
@@ -926,7 +1098,15 @@ export default function Index() {
 
         {activeTab === 'rating' && (
           <div className="space-y-6">
-            <h2 className="text-4xl font-bold neon-glow">РЕЙТИНГ ИГРОКОВ</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-4xl font-bold neon-glow">РЕЙТИНГ ИГРОКОВ</h2>
+              <Card className="p-3 bg-primary/20 border-primary/30">
+                <div className="flex items-center gap-2">
+                  <Icon name="Clock" size={20} />
+                  <span className="text-lg font-bold">Обновление через: {ratingTimer}с</span>
+                </div>
+              </Card>
+            </div>
             <Card className="p-6 bg-card border-2 border-primary/30">
               <div className="space-y-4">
                 {(() => {
@@ -964,6 +1144,125 @@ export default function Index() {
                 })()}
               </div>
             </Card>
+          </div>
+        )}
+
+        {activeTab === 'admin' && userData.username === 'Arbuz0' && (
+          <div className="space-y-6">
+            <h2 className="text-4xl font-bold neon-glow">⚡ АДМИН ПАНЕЛЬ</h2>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="p-6 bg-card border-2 border-primary/30">
+                <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                  <Icon name="Gift" size={24} />
+                  Выдать себе подарки
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Звезды</Label>
+                    <Input
+                      type="number"
+                      value={adminGiftStars}
+                      onChange={(e) => setAdminGiftStars(Number(e.target.value))}
+                      placeholder="Количество звезд"
+                      className="mt-2"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Выбрать предмет</Label>
+                    <Select onValueChange={(value) => {
+                      const item = allPossibleItems.find(i => i.name === value);
+                      setAdminGiftItem(item || null);
+                    }}>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Выберите предмет" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allPossibleItems.map((item) => (
+                          <SelectItem key={item.id} value={item.name}>
+                            {item.icon} {item.name} ({item.rarity})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {adminGiftItem && (
+                    <Card className={`p-4 bg-gradient-to-br ${rarityColors[adminGiftItem.rarity]}`}>
+                      <div className="text-center">
+                        <div className="text-4xl">{adminGiftItem.icon}</div>
+                        <div className="text-white font-bold">{adminGiftItem.name}</div>
+                      </div>
+                    </Card>
+                  )}
+                  
+                  <Button onClick={adminGiveGift} className="w-full" size="lg">
+                    ВЫДАТЬ ПОДАРОК
+                  </Button>
+                </div>
+              </Card>
+              
+              <Card className="p-6 bg-card border-2 border-primary/30">
+                <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                  <Icon name="Ticket" size={24} />
+                  Управление промокодами
+                </h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Новый промокод</Label>
+                    <Input
+                      value={adminNewPromocode}
+                      onChange={(e) => setAdminNewPromocode(e.target.value.toUpperCase())}
+                      placeholder="КОД"
+                      className="mt-2 font-bold"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Награда (звезды)</Label>
+                    <Input
+                      type="number"
+                      value={adminPromoStars}
+                      onChange={(e) => setAdminPromoStars(Number(e.target.value))}
+                      placeholder="Количество звезд"
+                      className="mt-2"
+                    />
+                  </div>
+                  
+                  <Button onClick={adminCreatePromocode} className="w-full" size="lg">
+                    СОЗДАТЬ ПРОМОКОД
+                  </Button>
+                  
+                  <div className="mt-6 space-y-2">
+                    <h4 className="font-bold">Активные промокоды:</h4>
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                      {promocodes.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Нет промокодов</p>
+                      ) : (
+                        promocodes.map((promo) => (
+                          <div key={promo.code} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                            <div>
+                              <div className="font-bold">{promo.code}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {promo.reward.stars && `⭐ ${promo.reward.stars} звезд`}
+                              </div>
+                            </div>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => adminDeletePromocode(promo.code)}
+                            >
+                              Удалить
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </div>
           </div>
         )}
       </main>
