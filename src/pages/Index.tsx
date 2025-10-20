@@ -81,10 +81,19 @@ const getRandomItem = (caseId: number): Item => {
   }
 };
 
-const upgradeChances: Record<string, Record<string, number>> = {
-  'common': { 'rare': 70, 'epic': 30, 'legendary': 10 },
-  'rare': { 'epic': 50, 'legendary': 20 },
-  'epic': { 'legendary': 30 },
+const upgradeChances: Record<string, Record<string, { chance: number, items: string[] }>> = {
+  'common': {
+    'rare': { chance: 80, items: ['Rare Gem', 'Silver Trophy'] },
+  },
+  'rare': {
+    'epic': { chance: 60, items: ['Epic Crown', 'Epic Crystal', 'Chocolate'] },
+  },
+  'epic': {
+    'legendary': { chance: 40, items: ['Gold Trophy', 'Fire Diamond'] },
+  },
+  'legendary': {
+    'mythic': { chance: 5, items: ['PEPE'] },
+  },
 };
 
 export default function Index() {
@@ -325,22 +334,28 @@ export default function Index() {
     }
   };
 
+  const getAvailableUpgrades = (fromRarity: string) => {
+    const upgrades = upgradeChances[fromRarity];
+    if (!upgrades) return [];
+    
+    const result: { rarity: string, items: Item[], chance: number }[] = [];
+    Object.entries(upgrades).forEach(([toRarity, config]) => {
+      const items = allPossibleItems.filter(i => config.items.includes(i.name));
+      result.push({ rarity: toRarity, items, chance: config.chance });
+    });
+    return result;
+  };
+
   const startUpgrade = () => {
     if (!selectedItemFrom || !selectedItemTo || !userData || isUpgrading) return;
     
-    const fromIndex = ['common', 'rare', 'epic', 'legendary'].indexOf(selectedItemFrom.rarity);
-    const toIndex = ['common', 'rare', 'epic', 'legendary'].indexOf(selectedItemTo.rarity);
-    
-    if (toIndex <= fromIndex) {
-      alert('Можно улучшать только на более высокую редкость!');
-      return;
-    }
-    
-    const chance = upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity] || 0;
-    if (chance === 0) {
+    const upgradeConfig = upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity];
+    if (!upgradeConfig) {
       alert('Невозможное улучшение!');
       return;
     }
+    
+    const chance = upgradeConfig.chance;
     
     setIsUpgrading(true);
     playSound('spin');
@@ -353,7 +368,13 @@ export default function Index() {
     
     setTimeout(() => {
       if (randomResult) {
-        playSound('win');
+        if (selectedItemTo.rarity === 'mythic') {
+          playSound('mythic');
+        } else if (selectedItemTo.rarity === 'legendary') {
+          playSound('legendary');
+        } else {
+          playSound('win');
+        }
         setUpgradeResult('success');
         const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
         newInventory.push({ ...selectedItemTo, id: Date.now() });
@@ -438,7 +459,8 @@ export default function Index() {
 
   const getUpgradeChance = () => {
     if (!selectedItemFrom || !selectedItemTo) return 0;
-    return upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity] || 0;
+    const config = upgradeChances[selectedItemFrom.rarity]?.[selectedItemTo.rarity];
+    return config?.chance || 0;
   };
 
   return (
@@ -679,7 +701,7 @@ export default function Index() {
                     <SelectValue placeholder="Выберите предмет" />
                   </SelectTrigger>
                   <SelectContent>
-                    {userData.inventory.filter(i => i.rarity !== 'mythic' && i.rarity !== 'legendary').map((item) => (
+                    {userData.inventory.filter(i => i.rarity !== 'mythic').map((item) => (
                       <SelectItem key={item.id} value={String(item.id)}>
                         {item.icon} {item.name} ({item.rarity})
                       </SelectItem>
@@ -701,19 +723,24 @@ export default function Index() {
 
               <Card className="p-6 bg-card border-2 border-secondary/30">
                 <h3 className="text-xl font-bold mb-4">Что хотим получить?</h3>
-                <Select onValueChange={(value) => {
-                  const item = allPossibleItems.find(i => `${i.name}-${i.rarity}` === value);
-                  setSelectedItemTo(item ? { ...item, id: Date.now() } : null);
-                }}>
+                <Select 
+                  disabled={!selectedItemFrom}
+                  onValueChange={(value) => {
+                    const item = allPossibleItems.find(i => `${i.name}-${i.rarity}` === value);
+                    setSelectedItemTo(item ? { ...item, id: Date.now() } : null);
+                  }}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Выберите предмет" />
+                    <SelectValue placeholder={selectedItemFrom ? "Выберите предмет" : "Сначала выберите предмет для улучшения"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {allPossibleItems.filter(i => i.rarity !== 'mythic' && i.rarity !== 'common').map((item) => (
-                      <SelectItem key={`${item.name}-${item.rarity}`} value={`${item.name}-${item.rarity}`}>
-                        {item.icon} {item.name} ({item.rarity})
-                      </SelectItem>
-                    ))}
+                    {selectedItemFrom && getAvailableUpgrades(selectedItemFrom.rarity).map(upgrade => 
+                      upgrade.items.map((item) => (
+                        <SelectItem key={`${item.name}-${item.rarity}`} value={`${item.name}-${item.rarity}`}>
+                          {item.icon} {item.name} ({item.rarity}) - {upgrade.chance}%
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
                 
@@ -733,23 +760,49 @@ export default function Index() {
             {selectedItemFrom && selectedItemTo && (
               <Card className="p-8 bg-card border-2 border-accent/30">
                 <div className="text-center space-y-6">
-                  <div className="relative w-64 h-64 mx-auto">
+                  <div className="relative w-80 h-80 mx-auto">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="45"
+                        fill="none"
+                        stroke="hsl(var(--primary))"
+                        strokeWidth="10"
+                        strokeDasharray={`${getUpgradeChance() * 2.827} ${(100 - getUpgradeChance()) * 2.827}`}
+                        className="drop-shadow-[0_0_10px_hsl(var(--primary))]" 
+                      />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="45"
+                        fill="none"
+                        stroke="hsl(var(--destructive))"
+                        strokeWidth="10"
+                        strokeDasharray={`${(100 - getUpgradeChance()) * 2.827} ${getUpgradeChance() * 2.827}`}
+                        strokeDashoffset={`${-getUpgradeChance() * 2.827}`}
+                        className="drop-shadow-[0_0_10px_hsl(var(--destructive))]"
+                      />
+                    </svg>
+                    
                     <div 
-                      className="absolute inset-0 rounded-full border-8 border-primary/30"
-                      style={{
-                        background: `conic-gradient(from 0deg, hsl(var(--primary)) 0deg ${getUpgradeChance() * 3.6}deg, hsl(var(--destructive)) ${getUpgradeChance() * 3.6}deg 360deg)`
-                      }}
-                    />
-                    <div 
-                      className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 w-1 h-16 bg-white shadow-[0_0_20px_white] origin-bottom transition-transform duration-3000"
+                      className="absolute top-0 left-1/2 origin-bottom"
                       style={{ 
-                        transform: `translateX(-50%) translateY(-2rem) rotate(${wheelRotation}deg)`,
-                        transition: isUpgrading ? 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none'
+                        transform: `translateX(-50%) rotate(${wheelRotation}deg)`,
+                        transition: isUpgrading ? 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none',
+                        height: '50%'
                       }}
-                    />
+                    >
+                      <svg width="24" height="40" viewBox="0 0 24 40" className="drop-shadow-[0_0_10px_white]">
+                        <polygon points="12,0 0,40 24,40" fill="white" />
+                      </svg>
+                    </div>
+                    
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-4xl font-bold neon-glow">
-                        {getUpgradeChance()}%
+                      <div className="bg-background/90 rounded-full w-32 h-32 flex items-center justify-center border-4 border-primary/50">
+                        <div className="text-4xl font-bold neon-glow">
+                          {getUpgradeChance()}%
+                        </div>
                       </div>
                     </div>
                   </div>
