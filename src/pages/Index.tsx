@@ -24,6 +24,10 @@ interface UserData {
   casesOpened: number;
   lastDailyCase?: number;
   usedPromocodes?: string[];
+  dailyTasks?: DailyTaskProgress;
+  lastTaskReset?: number;
+  itemsSold?: number;
+  upgradesAttempted?: number;
 }
 
 interface Promocode {
@@ -39,6 +43,24 @@ interface CaseOpenLog {
   username: string;
   item: Item;
   timestamp: number;
+}
+
+interface DailyTask {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  target: number;
+  reward: number;
+  type: 'openCases' | 'sellItems' | 'upgrade' | 'login';
+}
+
+interface DailyTaskProgress {
+  openCases: number;
+  sellItems: number;
+  upgrade: number;
+  login: boolean;
+  claimed: string[];
 }
 
 const cases = [
@@ -126,13 +148,21 @@ const upgradeChances: Record<string, Record<string, { chance: number, items: str
   },
 };
 
+const dailyTasks: DailyTask[] = [
+  { id: 'login', title: 'Ежедневный вход', description: 'Зайди в игру', icon: '🎮', target: 1, reward: 100, type: 'login' },
+  { id: 'openCases3', title: 'Открой 3 кейса', description: 'Открой любые кейсы 3 раза', icon: '📦', target: 3, reward: 300, type: 'openCases' },
+  { id: 'openCases5', title: 'Открой 5 кейсов', description: 'Открой любые кейсы 5 раз', icon: '🎁', target: 5, reward: 500, type: 'openCases' },
+  { id: 'sellItems5', title: 'Продай 5 предметов', description: 'Продай предметы из инвентаря', icon: '💰', target: 5, reward: 250, type: 'sellItems' },
+  { id: 'upgrade2', title: 'Улучши 2 раза', description: 'Попробуй улучшить предметы', icon: '⚡', target: 2, reward: 400, type: 'upgrade' },
+];
+
 export default function Index() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'upgrade' | 'profile' | 'rating' | 'admin'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'upgrade' | 'profile' | 'rating' | 'admin' | 'tasks'>('home');
   const [isSpinning, setIsSpinning] = useState(false);
   const [wonItem, setWonItem] = useState<Item | null>(null);
   const [rouletteItems, setRouletteItems] = useState<Item[]>([]);
@@ -242,9 +272,10 @@ export default function Index() {
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
-      const user = JSON.parse(savedUser);
+      const user = initDailyTasks(JSON.parse(savedUser));
       setUserData(user);
       setIsLoggedIn(true);
+      saveUserData(user);
     }
     
     const savedPromocodes = localStorage.getItem('promocodes');
@@ -353,6 +384,88 @@ export default function Index() {
       setUserData(data);
     }
   };
+  
+  const initDailyTasks = (user: UserData): UserData => {
+    const now = Date.now();
+    const lastReset = user.lastTaskReset || 0;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    
+    if (now - lastReset >= oneDayMs || !user.dailyTasks) {
+      return {
+        ...user,
+        dailyTasks: {
+          openCases: 0,
+          sellItems: 0,
+          upgrade: 0,
+          login: true,
+          claimed: [],
+        },
+        lastTaskReset: now,
+        itemsSold: user.itemsSold || 0,
+        upgradesAttempted: user.upgradesAttempted || 0,
+      };
+    }
+    
+    return user;
+  };
+  
+  const updateTaskProgress = (type: 'openCases' | 'sellItems' | 'upgrade', amount: number = 1) => {
+    if (!userData || !userData.dailyTasks) return;
+    
+    const updatedUser = { ...userData };
+    if (type === 'openCases') {
+      updatedUser.dailyTasks.openCases += amount;
+    } else if (type === 'sellItems') {
+      updatedUser.dailyTasks.sellItems += amount;
+      updatedUser.itemsSold = (updatedUser.itemsSold || 0) + amount;
+    } else if (type === 'upgrade') {
+      updatedUser.dailyTasks.upgrade += amount;
+      updatedUser.upgradesAttempted = (updatedUser.upgradesAttempted || 0) + amount;
+    }
+    
+    saveUserData(updatedUser);
+  };
+  
+  const claimTaskReward = (taskId: string) => {
+    if (!userData || !userData.dailyTasks) return;
+    
+    const task = dailyTasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    if (userData.dailyTasks.claimed.includes(taskId)) {
+      alert('Награда уже получена!');
+      return;
+    }
+    
+    let canClaim = false;
+    if (task.type === 'login') {
+      canClaim = userData.dailyTasks.login;
+    } else if (task.type === 'openCases') {
+      canClaim = userData.dailyTasks.openCases >= task.target;
+    } else if (task.type === 'sellItems') {
+      canClaim = userData.dailyTasks.sellItems >= task.target;
+    } else if (task.type === 'upgrade') {
+      canClaim = userData.dailyTasks.upgrade >= task.target;
+    }
+    
+    if (!canClaim) {
+      alert('Задание не выполнено!');
+      return;
+    }
+    
+    const updatedUser = {
+      ...userData,
+      stars: userData.stars + task.reward,
+      dailyTasks: {
+        ...userData.dailyTasks,
+        claimed: [...userData.dailyTasks.claimed, taskId],
+      },
+    };
+    
+    saveUserData(updatedUser);
+    playSound('win');
+    alert(`Награда получена! +${task.reward} ⭐`);
+  };
 
   const canOpenDailyCase = () => {
     if (!userData?.lastDailyCase) return true;
@@ -435,6 +548,7 @@ export default function Index() {
       localStorage.setItem('caseOpenLogs', JSON.stringify(updatedLogs));
       
       saveUserData(finalUser);
+      updateTaskProgress('openCases', 1);
       setIsSpinning(false);
       
       if (rouletteRef.current) {
@@ -455,6 +569,7 @@ export default function Index() {
         inventory: userData.inventory.filter(i => i.id !== itemId),
       };
       saveUserData(updatedUser);
+      updateTaskProgress('sellItems', 1);
     }
   };
 
@@ -509,6 +624,8 @@ export default function Index() {
         const newInventory = userData.inventory.filter(i => i.id !== selectedItemFrom.id);
         saveUserData({ ...userData, inventory: newInventory });
       }
+      
+      updateTaskProgress('upgrade', 1);
       
       setTimeout(() => {
         setIsUpgrading(false);
@@ -679,6 +796,7 @@ export default function Index() {
             {[
               { key: 'home', label: 'Главная', icon: 'Home' },
               { key: 'cases', label: 'Кейсы', icon: 'Package' },
+              { key: 'tasks', label: 'Задания', icon: 'ListChecks' },
               { key: 'inventory', label: 'Инвентарь', icon: 'Backpack' },
               { key: 'upgrade', label: 'Улучшения', icon: 'ArrowUpCircle' },
               { key: 'profile', label: 'Профиль', icon: 'User' },
@@ -888,6 +1006,112 @@ export default function Index() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'tasks' && userData.dailyTasks && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-4xl font-bold neon-glow">📋 ЕЖЕДНЕВНЫЕ ЗАДАНИЯ</h2>
+              <Card className="p-3 bg-primary/20 border-primary/30">
+                <div className="text-sm">
+                  <div className="font-bold">Выполнено сегодня</div>
+                  <div className="text-2xl text-center">
+                    {userData.dailyTasks.claimed.length}/{dailyTasks.length}
+                  </div>
+                </div>
+              </Card>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {dailyTasks.map((task) => {
+                const isClaimed = userData.dailyTasks!.claimed.includes(task.id);
+                let progress = 0;
+                let isCompleted = false;
+                
+                if (task.type === 'login') {
+                  progress = userData.dailyTasks!.login ? 1 : 0;
+                  isCompleted = userData.dailyTasks!.login;
+                } else if (task.type === 'openCases') {
+                  progress = userData.dailyTasks!.openCases;
+                  isCompleted = progress >= task.target;
+                } else if (task.type === 'sellItems') {
+                  progress = userData.dailyTasks!.sellItems;
+                  isCompleted = progress >= task.target;
+                } else if (task.type === 'upgrade') {
+                  progress = userData.dailyTasks!.upgrade;
+                  isCompleted = progress >= task.target;
+                }
+                
+                return (
+                  <Card 
+                    key={task.id}
+                    className={`p-6 border-2 transition-all ${
+                      isClaimed 
+                        ? 'bg-green-500/20 border-green-500/50' 
+                        : isCompleted 
+                        ? 'bg-primary/20 border-primary animate-pulse-glow' 
+                        : 'bg-card border-primary/30'
+                    }`}
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div className="text-5xl">{task.icon}</div>
+                        {isClaimed && <Badge className="bg-green-500">✓ Получено</Badge>}
+                        {!isClaimed && isCompleted && <Badge className="bg-primary animate-pulse">Готово!</Badge>}
+                      </div>
+                      
+                      <div>
+                        <h3 className="text-xl font-bold mb-1">{task.title}</h3>
+                        <p className="text-sm text-muted-foreground">{task.description}</p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Прогресс</span>
+                          <span className="font-bold">{Math.min(progress, task.target)}/{task.target}</span>
+                        </div>
+                        <Progress value={(Math.min(progress, task.target) / task.target) * 100} />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-yellow-500">
+                          <span className="text-2xl">⭐</span>
+                          <span className="text-xl font-bold">{task.reward}</span>
+                        </div>
+                        <Button
+                          onClick={() => claimTaskReward(task.id)}
+                          disabled={isClaimed || !isCompleted}
+                          size="sm"
+                          className={isClaimed ? 'opacity-50' : ''}
+                        >
+                          {isClaimed ? 'Получено' : 'Получить'}
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+            
+            <Card className="p-6 bg-gradient-to-r from-primary/10 to-secondary/10 border-primary/30">
+              <div className="flex items-center gap-4">
+                <div className="text-4xl">🎯</div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold">Награды обновляются каждый день!</h3>
+                  <p className="text-muted-foreground">Выполняй задания и получай бонусные звёзды</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-primary">
+                    {userData.dailyTasks.claimed.reduce((sum, id) => {
+                      const task = dailyTasks.find(t => t.id === id);
+                      return sum + (task?.reward || 0);
+                    }, 0)} ⭐
+                  </div>
+                  <div className="text-sm text-muted-foreground">Заработано сегодня</div>
+                </div>
+              </div>
+            </Card>
           </div>
         )}
 
