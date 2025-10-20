@@ -1,16 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface Item {
   id: number;
   name: string;
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  rarity: 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
   price: number;
   icon: string;
+}
+
+interface UserData {
+  username: string;
+  stars: number;
+  inventory: Item[];
+  level: number;
+  casesOpened: number;
 }
 
 const cases = [
@@ -25,50 +35,234 @@ const rarityColors = {
   rare: 'from-blue-500 to-cyan-500',
   epic: 'from-purple-500 to-pink-500',
   legendary: 'from-yellow-500 to-amber-500',
+  mythic: 'from-green-500 to-emerald-500',
 };
 
-const mockItems: Item[] = [
+const allPossibleItems: Item[] = [
   { id: 1, name: 'Common Star', rarity: 'common', price: 50, icon: '⭐' },
-  { id: 2, name: 'Rare Gem', rarity: 'rare', price: 200, icon: '💎' },
-  { id: 3, name: 'Epic Coin', rarity: 'epic', price: 750, icon: '🪙' },
-  { id: 4, name: 'Legendary Trophy', rarity: 'legendary', price: 3000, icon: '🏆' },
+  { id: 2, name: 'Bronze Coin', rarity: 'common', price: 75, icon: '🪙' },
+  { id: 3, name: 'Rare Gem', rarity: 'rare', price: 200, icon: '💎' },
+  { id: 4, name: 'Silver Trophy', rarity: 'rare', price: 300, icon: '🥈' },
+  { id: 5, name: 'Epic Crown', rarity: 'epic', price: 750, icon: '👑' },
+  { id: 6, name: 'Epic Crystal', rarity: 'epic', price: 900, icon: '💠' },
+  { id: 7, name: 'Gold Trophy', rarity: 'legendary', price: 3000, icon: '🏆' },
+  { id: 8, name: 'Fire Diamond', rarity: 'legendary', price: 4500, icon: '🔥' },
+  { id: 9, name: 'PEPE', rarity: 'mythic', price: 1000000, icon: '🐸' },
 ];
 
+const getRandomItem = (caseId: number): Item => {
+  const random = Math.random() * 100;
+  
+  if (caseId === 4 && random < 1) {
+    return allPossibleItems[8];
+  }
+  
+  if (random < 40) {
+    const commonItems = allPossibleItems.filter(i => i.rarity === 'common');
+    return commonItems[Math.floor(Math.random() * commonItems.length)];
+  } else if (random < 70) {
+    const rareItems = allPossibleItems.filter(i => i.rarity === 'rare');
+    return rareItems[Math.floor(Math.random() * rareItems.length)];
+  } else if (random < 90) {
+    const epicItems = allPossibleItems.filter(i => i.rarity === 'epic');
+    return epicItems[Math.floor(Math.random() * epicItems.length)];
+  } else {
+    const legendaryItems = allPossibleItems.filter(i => i.rarity === 'legendary');
+    return legendaryItems[Math.floor(Math.random() * legendaryItems.length)];
+  }
+};
+
 export default function Index() {
-  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'shop' | 'profile' | 'rating'>('home');
-  const [stars, setStars] = useState(5000);
-  const [inventory, setInventory] = useState<Item[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [activeTab, setActiveTab] = useState<'home' | 'cases' | 'inventory' | 'profile' | 'rating'>('home');
   const [isSpinning, setIsSpinning] = useState(false);
   const [wonItem, setWonItem] = useState<Item | null>(null);
+  const [rouletteItems, setRouletteItems] = useState<Item[]>([]);
+  const rouletteRef = useRef<HTMLDivElement>(null);
 
-  const openCase = (casePrice: number) => {
-    if (stars < casePrice || isSpinning) return;
-    
-    setStars(stars - casePrice);
+  useEffect(() => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      setUserData(user);
+      setIsLoggedIn(true);
+    }
+  }, []);
+
+  const handleAuth = () => {
+    if (!username || !password) return;
+
+    const users = JSON.parse(localStorage.getItem('users') || '{}');
+
+    if (isRegistering) {
+      if (users[username]) {
+        alert('Пользователь уже существует!');
+        return;
+      }
+      const newUser: UserData = {
+        username,
+        stars: 5000,
+        inventory: [],
+        level: 0,
+        casesOpened: 0,
+      };
+      users[username] = { password, data: newUser };
+      localStorage.setItem('users', JSON.stringify(users));
+      localStorage.setItem('currentUser', JSON.stringify(newUser));
+      setUserData(newUser);
+      setIsLoggedIn(true);
+    } else {
+      if (!users[username] || users[username].password !== password) {
+        alert('Неверный логин или пароль!');
+        return;
+      }
+      const user = users[username].data;
+      setUserData(user);
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      setIsLoggedIn(true);
+    }
+  };
+
+  const saveUserData = (data: UserData) => {
+    const users = JSON.parse(localStorage.getItem('users') || '{}');
+    if (users[data.username]) {
+      users[data.username].data = data;
+      localStorage.setItem('users', JSON.stringify(users));
+      localStorage.setItem('currentUser', JSON.stringify(data));
+      setUserData(data);
+    }
+  };
+
+  const openCase = (caseId: number, casePrice: number) => {
+    if (!userData || userData.stars < casePrice || isSpinning) return;
+
+    const updatedUser = { ...userData, stars: userData.stars - casePrice };
+    setUserData(updatedUser);
     setIsSpinning(true);
     setWonItem(null);
 
-    setTimeout(() => {
-      const random = Math.random();
-      let item: Item;
-      if (random < 0.5) item = mockItems[0];
-      else if (random < 0.8) item = mockItems[1];
-      else if (random < 0.95) item = mockItems[2];
-      else item = mockItems[3];
+    const items: Item[] = [];
+    for (let i = 0; i < 50; i++) {
+      items.push(getRandomItem(caseId));
+    }
+    const winningItem = getRandomItem(caseId);
+    items.push(winningItem);
+    
+    for (let i = 0; i < 20; i++) {
+      items.push(getRandomItem(caseId));
+    }
+    
+    setRouletteItems(items);
 
-      setWonItem(item);
-      setInventory([...inventory, { ...item, id: Date.now() }]);
+    setTimeout(() => {
+      if (rouletteRef.current) {
+        const itemWidth = 150;
+        const targetPosition = -(50 * itemWidth - window.innerWidth / 2 + itemWidth / 2);
+        rouletteRef.current.style.transition = 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        rouletteRef.current.style.transform = `translateX(${targetPosition}px)`;
+      }
+    }, 100);
+
+    setTimeout(() => {
+      setWonItem(winningItem);
+      const newInventory = [...updatedUser.inventory, { ...winningItem, id: Date.now() }];
+      const newCasesOpened = updatedUser.casesOpened + 1;
+      const newLevel = Math.floor(newCasesOpened / 10);
+      
+      const finalUser = {
+        ...updatedUser,
+        inventory: newInventory,
+        casesOpened: newCasesOpened,
+        level: newLevel,
+      };
+      
+      saveUserData(finalUser);
       setIsSpinning(false);
-    }, 3000);
+      
+      if (rouletteRef.current) {
+        rouletteRef.current.style.transition = 'none';
+        rouletteRef.current.style.transform = 'translateX(0)';
+      }
+    }, 3200);
   };
 
   const sellItem = (itemId: number) => {
-    const item = inventory.find(i => i.id === itemId);
+    if (!userData) return;
+    const item = userData.inventory.find(i => i.id === itemId);
     if (item) {
-      setStars(stars + item.price);
-      setInventory(inventory.filter(i => i.id !== itemId));
+      const updatedUser = {
+        ...userData,
+        stars: userData.stars + item.price,
+        inventory: userData.inventory.filter(i => i.id !== itemId),
+      };
+      saveUserData(updatedUser);
     }
   };
+
+  const logout = () => {
+    localStorage.removeItem('currentUser');
+    setIsLoggedIn(false);
+    setUserData(null);
+    setUsername('');
+    setPassword('');
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md p-8 bg-card border-2 border-primary/30 neon-border">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold neon-glow mb-2">CASE SPINNER</h1>
+            <p className="text-muted-foreground">
+              {isRegistering ? 'Создать аккаунт' : 'Войти в аккаунт'}
+            </p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="username">Имя пользователя</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Введите имя"
+                className="mt-2"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="password">Пароль</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Введите пароль"
+                className="mt-2"
+              />
+            </div>
+            
+            <Button onClick={handleAuth} className="w-full">
+              {isRegistering ? 'ЗАРЕГИСТРИРОВАТЬСЯ' : 'ВОЙТИ'}
+            </Button>
+            
+            <button
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="w-full text-sm text-primary hover:underline"
+            >
+              {isRegistering ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
+            </button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!userData) return null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -78,8 +272,11 @@ export default function Index() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 bg-primary/20 px-4 py-2 rounded-lg neon-border">
               <span className="text-2xl">⭐</span>
-              <span className="text-xl font-bold">{stars.toLocaleString()}</span>
+              <span className="text-xl font-bold">{userData.stars.toLocaleString()}</span>
             </div>
+            <Button onClick={logout} variant="outline" size="sm">
+              Выйти
+            </Button>
           </div>
         </div>
       </header>
@@ -91,7 +288,6 @@ export default function Index() {
               { key: 'home', label: 'Главная', icon: 'Home' },
               { key: 'cases', label: 'Кейсы', icon: 'Package' },
               { key: 'inventory', label: 'Инвентарь', icon: 'Backpack' },
-              { key: 'shop', label: 'Магазин', icon: 'ShoppingCart' },
               { key: 'profile', label: 'Профиль', icon: 'User' },
               { key: 'rating', label: 'Рейтинг', icon: 'Trophy' },
             ].map((tab) => (
@@ -122,6 +318,9 @@ export default function Index() {
               <p className="text-xl text-muted-foreground">
                 Получай эксклюзивные NFT и продавай их за звёзды
               </p>
+              <p className="text-2xl font-bold text-accent gold-glow">
+                🐸 PEPE - 1% шанс в Legend Case!
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -129,7 +328,7 @@ export default function Index() {
                 <Card
                   key={caseItem.id}
                   className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer animate-fade-in`}
-                  onClick={() => openCase(caseItem.price)}
+                  onClick={() => openCase(caseItem.id, caseItem.price)}
                 >
                   <div className="text-center space-y-4">
                     <div className="text-6xl">📦</div>
@@ -138,7 +337,10 @@ export default function Index() {
                       <span className="text-xl">⭐</span>
                       <span className="text-xl font-bold">{caseItem.price}</span>
                     </div>
-                    <Button className="w-full bg-white/20 hover:bg-white/30 text-white font-bold">
+                    <Button 
+                      className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
+                      disabled={userData.stars < caseItem.price}
+                    >
                       ОТКРЫТЬ
                     </Button>
                   </div>
@@ -147,12 +349,30 @@ export default function Index() {
             </div>
 
             {isSpinning && (
-              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                <div className="text-center space-y-6">
-                  <div className="text-6xl animate-spin">🎰</div>
-                  <p className="text-2xl font-bold neon-glow">ОТКРЫВАЕМ КЕЙС...</p>
-                  <Progress value={66} className="w-64" />
+              <div className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                <div className="relative w-full h-48 overflow-hidden">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <div className="w-1 h-48 bg-primary shadow-[0_0_20px_hsl(var(--primary))]"></div>
+                  </div>
+                  
+                  <div
+                    ref={rouletteRef}
+                    className="flex items-center h-full gap-4 px-4"
+                    style={{ transform: 'translateX(0)' }}
+                  >
+                    {rouletteItems.map((item, index) => (
+                      <div
+                        key={index}
+                        className={`flex-shrink-0 w-32 h-32 bg-gradient-to-br ${rarityColors[item.rarity]} rounded-lg border-2 border-white/30 flex flex-col items-center justify-center`}
+                      >
+                        <div className="text-5xl">{item.icon}</div>
+                        <div className="text-xs text-white font-bold mt-1">{item.name}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                
+                <p className="text-2xl font-bold neon-glow mt-8">ОТКРЫВАЕМ КЕЙС...</p>
               </div>
             )}
 
@@ -165,7 +385,7 @@ export default function Index() {
                     <Badge className="text-lg px-4 py-2">{wonItem.rarity.toUpperCase()}</Badge>
                     <div className="flex items-center justify-center gap-2 text-white">
                       <span className="text-2xl">⭐</span>
-                      <span className="text-2xl font-bold">{wonItem.price}</span>
+                      <span className="text-2xl font-bold">{wonItem.price.toLocaleString()}</span>
                     </div>
                     <Button onClick={() => setWonItem(null)} className="bg-white text-black hover:bg-gray-200">
                       ЗАБРАТЬ
@@ -185,7 +405,7 @@ export default function Index() {
                 <Card
                   key={caseItem.id}
                   className={`p-6 bg-gradient-to-br ${caseItem.color} border-2 border-primary/50 hover:scale-105 transition-transform cursor-pointer`}
-                  onClick={() => openCase(caseItem.price)}
+                  onClick={() => openCase(caseItem.id, caseItem.price)}
                 >
                   <div className="text-center space-y-4">
                     <div className="text-6xl">📦</div>
@@ -194,7 +414,10 @@ export default function Index() {
                       <span className="text-xl">⭐</span>
                       <span className="text-xl font-bold">{caseItem.price}</span>
                     </div>
-                    <Button className="w-full bg-white/20 hover:bg-white/30 text-white font-bold">
+                    <Button 
+                      className="w-full bg-white/20 hover:bg-white/30 text-white font-bold"
+                      disabled={userData.stars < caseItem.price}
+                    >
                       ОТКРЫТЬ
                     </Button>
                   </div>
@@ -207,14 +430,14 @@ export default function Index() {
         {activeTab === 'inventory' && (
           <div className="space-y-6">
             <h2 className="text-4xl font-bold neon-glow">МОЙ ИНВЕНТАРЬ</h2>
-            {inventory.length === 0 ? (
+            {userData.inventory.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">
                 <Icon name="Package" size={64} className="mx-auto mb-4 opacity-50" />
                 <p className="text-xl">Инвентарь пуст. Открой кейсы!</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {inventory.map((item) => (
+                {userData.inventory.map((item) => (
                   <Card
                     key={item.id}
                     className={`p-4 bg-gradient-to-br ${rarityColors[item.rarity]} border-2 border-primary/30`}
@@ -224,7 +447,7 @@ export default function Index() {
                       <h3 className="font-bold text-white">{item.name}</h3>
                       <div className="flex items-center justify-center gap-1 text-white text-sm">
                         <span>⭐</span>
-                        <span className="font-bold">{item.price}</span>
+                        <span className="font-bold">{item.price.toLocaleString()}</span>
                       </div>
                       <Button
                         onClick={() => sellItem(item.id)}
@@ -241,38 +464,6 @@ export default function Index() {
           </div>
         )}
 
-        {activeTab === 'shop' && (
-          <div className="space-y-6">
-            <h2 className="text-4xl font-bold neon-glow">МАГАЗИН</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="p-6 bg-card border-2 border-primary/30">
-                <div className="text-center space-y-4">
-                  <div className="text-6xl">⭐</div>
-                  <h3 className="text-2xl font-bold">1000 Звёзд</h3>
-                  <p className="text-3xl font-bold text-primary">$4.99</p>
-                  <Button className="w-full">КУПИТЬ</Button>
-                </div>
-              </Card>
-              <Card className="p-6 bg-card border-2 border-secondary/30">
-                <div className="text-center space-y-4">
-                  <div className="text-6xl">⭐</div>
-                  <h3 className="text-2xl font-bold">5000 Звёзд</h3>
-                  <p className="text-3xl font-bold text-secondary">$19.99</p>
-                  <Button className="w-full">КУПИТЬ</Button>
-                </div>
-              </Card>
-              <Card className="p-6 bg-card border-2 border-accent/30">
-                <div className="text-center space-y-4">
-                  <div className="text-6xl gold-glow">⭐</div>
-                  <h3 className="text-2xl font-bold">15000 Звёзд</h3>
-                  <p className="text-3xl font-bold text-accent">$49.99</p>
-                  <Button className="w-full">КУПИТЬ</Button>
-                </div>
-              </Card>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'profile' && (
           <div className="max-w-2xl mx-auto space-y-6">
             <Card className="p-8 bg-card border-2 border-primary/30">
@@ -281,15 +472,15 @@ export default function Index() {
                   👤
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-3xl font-bold">Player #42069</h2>
+                  <h2 className="text-3xl font-bold">{userData.username}</h2>
                   <div className="flex items-center gap-4 text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Icon name="Star" size={16} />
-                      Уровень 15
+                      Уровень {userData.level}
                     </span>
                     <span className="flex items-center gap-1">
                       <Icon name="Package" size={16} />
-                      Открыто кейсов: {inventory.length}
+                      Открыто кейсов: {userData.casesOpened}
                     </span>
                   </div>
                 </div>
@@ -301,18 +492,18 @@ export default function Index() {
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span>Всего открыто кейсов</span>
-                    <span className="font-bold">{inventory.length}</span>
+                    <span>Прогресс до следующего уровня</span>
+                    <span className="font-bold">{userData.casesOpened % 10}/10</span>
                   </div>
-                  <Progress value={(inventory.length / 100) * 100} />
+                  <Progress value={(userData.casesOpened % 10) * 10} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 pt-4">
                   <div className="text-center p-4 bg-muted rounded-lg">
-                    <div className="text-3xl font-bold text-primary">{stars.toLocaleString()}</div>
+                    <div className="text-3xl font-bold text-primary">{userData.stars.toLocaleString()}</div>
                     <div className="text-sm text-muted-foreground">Текущий баланс</div>
                   </div>
                   <div className="text-center p-4 bg-muted rounded-lg">
-                    <div className="text-3xl font-bold text-secondary">{inventory.length}</div>
+                    <div className="text-3xl font-bold text-secondary">{userData.inventory.length}</div>
                     <div className="text-sm text-muted-foreground">В инвентаре</div>
                   </div>
                 </div>
@@ -326,32 +517,39 @@ export default function Index() {
             <h2 className="text-4xl font-bold neon-glow">РЕЙТИНГ ИГРОКОВ</h2>
             <Card className="p-6 bg-card border-2 border-primary/30">
               <div className="space-y-4">
-                {[
-                  { rank: 1, name: 'ProGamer2000', stars: 125000, icon: '🥇' },
-                  { rank: 2, name: 'LuckyStar', stars: 98000, icon: '🥈' },
-                  { rank: 3, name: 'CaseKing', stars: 87000, icon: '🥉' },
-                  { rank: 4, name: 'Player #42069', stars: stars, icon: '👤' },
-                  { rank: 5, name: 'Spinner123', stars: 45000, icon: '⭐' },
-                ].map((player) => (
-                  <div
-                    key={player.rank}
-                    className={`flex items-center justify-between p-4 rounded-lg ${
-                      player.name === 'Player #42069'
-                        ? 'bg-primary/20 border-2 border-primary'
-                        : 'bg-muted/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <span className="text-2xl font-bold w-8">{player.rank}</span>
-                      <span className="text-3xl">{player.icon}</span>
-                      <span className="text-xl font-semibold">{player.name}</span>
+                {(() => {
+                  const users = JSON.parse(localStorage.getItem('users') || '{}');
+                  const allUsers = Object.values(users).map((u: any) => u.data) as UserData[];
+                  allUsers.sort((a, b) => b.stars - a.stars);
+                  
+                  const topUsers = allUsers.slice(0, 10);
+                  
+                  return topUsers.map((user, index) => (
+                    <div
+                      key={user.username}
+                      className={`flex items-center justify-between p-4 rounded-lg ${
+                        user.username === userData.username
+                          ? 'bg-primary/20 border-2 border-primary'
+                          : 'bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-bold w-8">{index + 1}</span>
+                        <span className="text-3xl">
+                          {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐'}
+                        </span>
+                        <div>
+                          <div className="text-xl font-semibold">{user.username}</div>
+                          <div className="text-sm text-muted-foreground">Уровень {user.level}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">⭐</span>
+                        <span className="text-xl font-bold">{user.stars.toLocaleString()}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">⭐</span>
-                      <span className="text-xl font-bold">{player.stars.toLocaleString()}</span>
-                    </div>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </Card>
           </div>
